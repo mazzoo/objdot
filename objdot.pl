@@ -32,6 +32,7 @@ my $arm_mode   = "thumb"; # cpu mode 16/32 bit at startup
 #     e.g. for a x86 BIOS you'd say -16 here (x86 reset vector
 #
 my $start_offset = -0x10; # reset vector is 16 bytes before end
+#my $start_offset = 3; # for PCI option ROMs (e.g. a Video BIOS)
 
 
 # disassembler - tweak objdump to your needs here...
@@ -74,11 +75,6 @@ sub first_match($$$$)
 		return 0;
 	}
 	my $result = hex($a0);
-	if ($x86_mode == "16")
-	{
-		# but don't leave the current segment
-		$result += $addr_next &0xfff00000;
-	}
 	return $result;
 }
 
@@ -346,7 +342,7 @@ sub dump_dot_file()
 		foreach $op (@$this_bb_ops)
 		{
 			@$op[2] =~ s/FIXME/<font color="red">FIXME<\/font>/g;
-			@$op[2] =~ s/(new CPU mode .*)/<font color="green">\1<\/font>/g;
+			@$op[2] =~ s/(new CPU mode .*)/<font color="green">$1<\/font>/g;
 			$ops = sprintf
 				"%s<tr><td align=\"left\"><font face=\"courier\">0x%4.4x:  %s</font></td><td align=\"left\"><font point-size=\"8\" face=\"courier\">%s</font></td></tr>",
 				$ops, @$op[0], @$op[2], @$op[1];
