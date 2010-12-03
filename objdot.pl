@@ -212,34 +212,39 @@ sub switches_cpu_mode($)
 {
 	my $mnemo = shift;
 
+	my $bb_mode = $x86_mode;
+
 	if ( $mnemo =~ /^mov.*,%cr0/ )
 	{
-		if ($x86_mode == "16")
+		if ($bb_mode == "16")
 		{
-			$x86_mode = "32";
+			$bb_mode = "32";
 		}else{
-			$x86_mode = "16";
+			$bb_mode = "16";
 		}
-		$dis = $dis_basic;
-		$dis .= " -M $x86_syntax "   if ($arch eq "i386");
-		$dis .= " -M data16,addr16 " if ($x86_mode == "16");
 		print "new CPU mode $x86_mode bit\n";
-		return $x86_mode;
+		return $bb_mode;
 	}
 	return 0;
 }
 
-sub do_next_bb($);
-sub do_next_bb($)
+sub do_next_bb($$);
+sub do_next_bb($$)
 {
 	my $start_addr = shift;
+	$x86_mode = shift;
+
 	return if (we_have_bb_for_addr($start_addr));
 	$have_bb_for_addr{$start_addr} = 1;
+
+	$dis = $dis_basic;
+	$dis .= " -M $x86_syntax "   if ($arch eq "i386");
+	$dis .= " -M data16,addr16 " if ($x86_mode == "16");
 
 	my $stop_addr = $start_addr + $min_disassembly_bytes;
 	my $cmd = "$dis --start-addr=$start_addr --stop-addr=$stop_addr $file_name";
 
-#	print "$cmd\n";
+	#print "$cmd\n";
 
 	open DIS, "$cmd|" or die "can't run $cmd: $!\n";
 
@@ -296,23 +301,25 @@ sub do_next_bb($)
 						push @this_bb_ops, [ ($addr, $hexop, $mnemo) ];
 					}
 				}
+				my $new_mode = $x86_mode;
 				if ($op_type[1] & $FLAG_MODE)
 				{
-					my $new_mode;
 					$new_mode = switches_cpu_mode($mnemo);
 					if ($new_mode)
 					{
 						pop @this_bb_ops;
 						$mnemo .= " new CPU mode $new_mode";
 						push @this_bb_ops, [ ($addr, $hexop, $mnemo) ];
+					}else{
+						$new_mode = $x86_mode;
 					}
 				}
 
-				push @bb, [ ($start_addr, $addr_next, [@this_bb_ops], [@successors] ) ];
+				push @bb, [ ($start_addr, $addr_next, $x86_mode, [@this_bb_ops], [@successors] ) ];
 
 				for (@successors)
 				{
-					do_next_bb($_);
+					do_next_bb($_, $new_mode);
 				}
 				return;
 			}
@@ -335,8 +342,8 @@ sub dump_dot_file()
 	my $i;
 	for $i ( 0 .. $#bb )
 	{
-		my $this_bb_ops = $bb[$i][2];
-		my $successors  = $bb[$i][3];
+		my $this_bb_ops = $bb[$i][3];
+		my $successors  = $bb[$i][4];
 
 		printf DOT "\tbb_0x%4.4x [shape=box];\n", $bb[$i][0];
 
@@ -351,8 +358,8 @@ sub dump_dot_file()
 				$ops, @$op[0], @$op[2], @$op[1];
 		}
 
-		printf DOT "\tbb_0x%4.4x [label=<<table border=\"0\" cellborder=\"0\"><tr><td bgcolor=\"grey\" align=\"center\" colspan=\"2\">0x%4.4x</td></tr>%s</table>>];\n",
-			$bb[$i][0], $bb[$i][0], $ops;
+		printf DOT "\tbb_0x%4.4x [label=<<table border=\"0\" cellborder=\"0\"><tr><td bgcolor=\"grey\" align=\"center\" colspan=\"2\">0x%4.4x   <font color=\"blue\" point-size=\"8\">%s</font></td></tr>%s</table>>];\n",
+			$bb[$i][0], $bb[$i][0], $bb[$i][2], $ops;
 
 		my $suc;
 		foreach $suc (@$successors)
@@ -380,7 +387,7 @@ sub main()
 	}else{
 		$start_addr = $start_offset;
 	}
-	do_next_bb($start_addr);
+	do_next_bb($start_addr, $x86_mode);
 	dump_dot_file();
 }
 
