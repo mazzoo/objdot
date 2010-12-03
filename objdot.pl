@@ -75,9 +75,7 @@ sub first_match($$$$)
 		return 0;
 	}
 	my $result = hex($a0);
-	printf "ANDing %x", $result;
 	$result &= $file_size-1;
-	printf " to %x\n", $result;
 	return $result;
 }
 
@@ -222,7 +220,7 @@ sub switches_cpu_mode($)
 		}else{
 			$bb_mode = "16";
 		}
-		print "new CPU mode $x86_mode bit\n";
+		print "new CPU mode $bb_mode bit\n";
 		return $bb_mode;
 	}
 	return 0;
