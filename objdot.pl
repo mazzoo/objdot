@@ -75,6 +75,9 @@ sub first_match($$$$)
 		return 0;
 	}
 	my $result = hex($a0);
+	printf "ANDing %x", $result;
+	$result &= $file_size-1;
+	printf " to %x\n", $result;
 	return $result;
 }
 
@@ -327,7 +330,7 @@ sub dump_dot_file()
 	$header_file_name =~ s/-/_/g;
 
 	printf DOT "digraph $header_file_name {\n";
-	printf DOT "\tgraph [fontsize=10];\n";
+	printf DOT "\tgraph [fontsize=10 size=\"180,180\"];\n";
 
 	my $i;
 	for $i ( 0 .. $#bb )
@@ -344,7 +347,7 @@ sub dump_dot_file()
 			@$op[2] =~ s/FIXME/<font color="red">FIXME<\/font>/g;
 			@$op[2] =~ s/(new CPU mode .*)/<font color="green">$1<\/font>/g;
 			$ops = sprintf
-				"%s<tr><td align=\"left\"><font face=\"courier\">0x%4.4x:  %s</font></td><td align=\"left\"><font point-size=\"8\" face=\"courier\">%s</font></td></tr>",
+				"%s<tr><td align=\"left\"><font face=\"Courier\">0x%4.4x:  %s</font></td><td align=\"left\"><font point-size=\"8\" face=\"Courier\">%s</font></td></tr>",
 				$ops, @$op[0], @$op[2], @$op[1];
 		}
 
