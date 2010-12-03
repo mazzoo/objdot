@@ -52,6 +52,24 @@ my @bb; # array of building blocks. each entry contains
 
 my $min_disassembly_bytes = 0x1000;
 
+my %toggle_cpu_mode = (
+	0x7f82c => "1",
+	0x7f87d => "1",
+	0x7fafc => "1",
+	0x7fb2e => "1",
+);
+
+my @extra_bb = (
+	[0x7f860, "32"],
+	[0x7f8ee, "32"],
+	[0x7fbe7, "32"],
+	[0x7fbf7, "32"],
+	[0x7fc01, "32"],
+	[0x7f8f8, "32"],
+	[0x7f922, "32"],
+	[0x7f92c, "32"],
+);
+
 my $file_name;
 my $file_size = 0;
 
@@ -235,6 +253,15 @@ sub do_next_bb($$)
 	return if (we_have_bb_for_addr($start_addr));
 	$have_bb_for_addr{$start_addr} = 1;
 
+        if (exists $toggle_cpu_mode{$start_addr}){
+		if ($x86_mode == "16")
+		{
+			$x86_mode = "32";
+		}else{
+			$x86_mode = "16";
+		}
+	}
+
 	$dis = $dis_basic;
 	$dis .= " -M $x86_syntax "   if ($arch eq "i386");
 	$dis .= " -M data16,addr16 " if ($x86_mode == "16");
@@ -386,6 +413,13 @@ sub main()
 		$start_addr = $start_offset;
 	}
 	do_next_bb($start_addr, $x86_mode);
+
+	my $extra;
+	foreach $extra (@extra_bb)
+	{
+		do_next_bb(@$extra[0], @$extra[1]);
+	}
+
 	dump_dot_file();
 }
 
