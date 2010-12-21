@@ -1,16 +1,33 @@
 #!/usr/bin/perl -w
-
+#
+########################################################################
+#
 # objdot.pl - generate callflow graphs through static analysis
 #             using objdump and dot/graphviz
 #
+#
 # by Matthias Wenzel a.k.a. mazzoo in 2010
 #
+#
 # software license: GPLv3
+#
+########################################################################
+
+
 
 #use strict; # FIXME someone tell me how to use
              #       function pointer tables strict
+
 use feature "switch";
 use File::stat;
+
+#$| = 1;
+
+########################################################################
+#
+# tweak some or most of these settings below
+#
+########################################################################
 
 # arch
 # x86_syntax
@@ -31,8 +48,8 @@ my $arm_mode   = "thumb"; # cpu mode 16/32 bit at startup
 #     negative means offset from the end of the file
 #     e.g. for a x86 BIOS you'd say -16 here (x86 reset vector
 #
-my $start_offset = -0x10; # reset vector is 16 bytes before end
-#my $start_offset = 3; # for PCI option ROMs (e.g. a Video BIOS)
+#my $start_offset = -0x10; # reset vector is 16 bytes before end
+my $start_offset = 3; # for PCI option ROMs (e.g. a Video BIOS)
 
 
 # disassembler - tweak objdump to your needs here...
@@ -46,40 +63,114 @@ $dis .= " -M data16,addr16 " if ($x86_mode == "16");
 my @bb; # array of building blocks. each entry contains
         # - start_addr of the block
         # - addr_next last address +1 of that bb - currently unused
+        # - cpu mode
         # - list of mnemonics for that bb
         # - list of hex opcodes for that mnemonic
         # - list of successors of this bb (can have zero, one or two entries)
 
 my $min_disassembly_bytes = 0x1000;
 
+
+# CPU mode detection is crappy. very crappy.
+# here with %toggle_cpu_mode you can mark bb where the detection
+# has gone wrong (only list the root bb that was detected wrong -
+# subsequent branches will be toggled implicitely)
+
 my %toggle_cpu_mode = (
-	0x7f82c => "1",
-	0x7f87d => "1",
-	0x7fafc => "1",
-	0x7fb2e => "1",
+#	0x7f82c => "1",
+#	0x7f87d => "1",
+#	0x7fafc => "1",
+#	0x7fb2e => "1",
 );
 
+
+# the automated static analysis herein often doesn't find all bb
+# (we run no simulation) but by reading the code humans often find
+# more and more start addresses for bb. list them here iteratively.
+
 my @extra_bb = (
-	[0x7f860, "32"],
-	[0x7f8ee, "32"],
-	[0x7fbe7, "32"],
-	[0x7fbf7, "32"],
-	[0x7fc01, "32"],
-	[0x7f8f8, "32"],
-	[0x7f922, "32"],
-	[0x7f92c, "32"],
+#	[0x7f860, "32"],
+#	[0x7f8ee, "32"],
+#	[0x7fbe7, "32"],
+#	[0x7fbf7, "32"],
+#	[0x7fc01, "32"],
+#	[0x7f8f8, "32"],
+#	[0x7f922, "32"],
+#	[0x7f92c, "32"],
 );
+
+########################################################################
+#
+# end of tweakables
+#
+########################################################################
 
 my $file_name;
 my $file_size = 0;
 
 my %have_bb_for_addr;
 
+sub split_bb($$)
+{
+	my $index      = shift;
+	my $split_addr = shift;
+
+	my @old_bb = splice(@bb, $index, 1);
+
+	my $cpu_mode    = $old_bb[0][2];
+	my $this_bb_ops = $old_bb[0][3];
+
+	my $op;
+	my $op_count = 0;
+	foreach $op (@$this_bb_ops)
+	{
+		last if @$op[0] == $split_addr;
+		$op_count++;
+	}
+
+	if ($op_count == $#$this_bb_ops + 1)
+	{
+		print "l33t binary jumps into middle of opcodes\n";
+		# push back original bb
+		push @bb, @old_bb;
+		# add new address
+		push @extra_bb, [ $split_addr, $cpu_mode ];
+		return;
+	}
+
+	$have_bb_for_addr{$split_addr} = 1;
+
+	my @bb_ops_1st = splice(@$this_bb_ops, 0, $op_count);
+	my @bb_ops_2nd = @$this_bb_ops;
+
+	my @successors_1st = ($bb_ops_2nd[0][0]);
+	my $successors_2nd = $old_bb[0][4];
+
+	my @bb_1st = [ ($old_bb[0][0], $split_addr, $cpu_mode, [@bb_ops_1st], [@successors_1st] ) ];
+	my @bb_2nd = [ ($split_addr, $old_bb[0][1], $cpu_mode, [@bb_ops_2nd], [@$successors_2nd] ) ];
+
+	push @bb, @bb_1st;
+	push @bb, @bb_2nd;
+}
+
 sub we_have_bb_for_addr($)
 {
-        my $a = shift;
-        return 1 if (exists $have_bb_for_addr{$a});
-        return 0;
+	my $a = shift;
+
+	# cache of existing bb
+	return 1 if (exists $have_bb_for_addr{$a});
+
+	my $i;
+	for $i ( 0 .. $#bb )
+	{
+		if ( ( hex($bb[$i][0]) < hex($a) ) &&
+		     ( hex($a) < hex($bb[$i][1]) ) )
+		{
+			split_bb($i, $a);
+			return 1;
+		}
+	}
+	return 0;
 }
 
 # functions for calculating dest addresses
@@ -156,7 +247,7 @@ my $FLAG_FIXME = 0x8000;
 #       function name calculating addr_dest
 
 my @ops_x86_att_16 = (
-	["call",     $FLAG_CALL, "0x([a-fA-F0-9]+)", "first_match"],
+	["call",     $FLAG_CALL, "[^:]0x([a-fA-F0-9]+)", "first_match"],
 	["lcall",    $FLAG_CALL, "", ],
 	["int",      $FLAG_CALL, "", ],
 	["ja",       $FLAG_JCC, "0x([a-fA-F0-9]+)", "first_match"],
